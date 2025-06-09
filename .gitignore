@@ -1,6 +1,7 @@
 # Python cache
 *__pycache__/
 
-models
-plots
+# Output directories
+models/
+plots/
 
