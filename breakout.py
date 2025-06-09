@@ -1,0 +1,138 @@
+import ale_py
+import gymnasium as gym
+import time
+import numpy as np
+import torch # For checking device
+import os
+import matplotlib.pyplot as plt
+from collections import deque
+import gymnasium.wrappers as gym_wrappers
+
+from agents.dqn import DQNAgent
+
+gym.register_envs(ale_py)
+
+# --- Hyperparameters ---
+ENV_NAME = 'ALE/Breakout-v5'
+RENDER_MODE = None # 'human' or None
+FRAMESKIP = 1
+
+NUM_EPISODES = 10000  # Number of episodes to train for
+MAX_STEPS_PER_EPISODE = 10000 # Max steps before truncating an episode
+EPSILON_START = 1.0    # Starting value of epsilon
+EPSILON_END = 0.01     # Minimum value of epsilon
+EPSILON_DECAY = 0.997  # Multiplicative factor for decaying epsilon
+SAVE_EVERY = 50 # Save the model and plot every N episodes
+
+# --- Directory Setup ---
+MODEL_DIR = "models"
+PLOT_DIR = "plots"
+os.makedirs(MODEL_DIR, exist_ok=True)
+os.makedirs(PLOT_DIR, exist_ok=True)
+MODEL_PATH = os.path.join(MODEL_DIR, "breakout_dqn.pth") # Path to save/load the model
+PLOT_PATH_PREFIX = os.path.join(PLOT_DIR, "breakout_scores")
+
+# --- Environment Setup ---
+env = gym_wrappers.AtariPreprocessing(
+    gym.make(
+        ENV_NAME, 
+        render_mode=RENDER_MODE, 
+        frameskip=FRAMESKIP
+    ),
+    screen_size=84,
+    grayscale_obs=True,
+    grayscale_newaxis=False, # Results in (H, W) for grayscale, not (H, W, 1)
+    frame_skip=4,            # Stacks and max-pools last 4 frames
+    scale_obs=True           # Normalizes observations to [0, 1] and converts to float32
+)
+env = gym_wrappers.FrameStackObservation(env, stack_size=4) # Apply FrameStack
+
+state_shape = env.observation_space.shape
+action_size = env.action_space.n
+
+print(f"State shape: {state_shape}")
+print(f"Action size: {action_size}")
+
+# --- Agent Setup ---
+agent = DQNAgent(state_space_shape=state_shape, action_space_size=action_size,
+                 buffer_size=10000, batch_size=64, gamma=0.99, lr=1e-4, tau=1e-3, update_every=4)
+
+# Try to load a pre-trained model
+# try:
+#     agent.load(MODEL_PATH)
+#     print(f"Loaded model from {MODEL_PATH}")
+#     # If loading a model, you might want to adjust epsilon if you're evaluating
+#     # EPSILON_START = EPSILON_END # Start with low epsilon if evaluating
+# except FileNotFoundError:
+#     print(f"No pre-trained model found at {MODEL_PATH}, starting from scratch.")
+
+
+# --- Training Loop ---
+epsilon = EPSILON_START
+total_steps = 0
+scores_window = deque(maxlen=100)
+all_episode_scores = []
+all_average_scores = []
+
+print(f"Training on {agent.device}")
+
+for i_episode in range(1, NUM_EPISODES + 1):
+    observation, info = env.reset()
+    # The observation from env.reset() is a LazyFrames object for Atari if not using wrappers.
+    # Convert to numpy array for the agent.
+    if not isinstance(observation, np.ndarray):
+        observation = np.array(observation)
+
+    current_episode_reward = 0
+
+    for t in range(MAX_STEPS_PER_EPISODE):
+        if RENDER_MODE == 'human':
+            env.render()
+
+        action = agent.act(observation, epsilon)
+        next_observation, reward, terminated, truncated, info = env.step(action)
+
+        if not isinstance(next_observation, np.ndarray):
+            next_observation = np.array(next_observation)
+
+        # Store experience in replay memory
+        agent.learn(observation, action, reward, next_observation, terminated or truncated)
+
+        observation = next_observation
+        current_episode_reward += reward
+        total_steps += 1
+
+        if terminated or truncated:
+            break
+
+    scores_window.append(current_episode_reward)
+    all_episode_scores.append(current_episode_reward)
+    current_avg_score = np.mean(scores_window)
+    all_average_scores.append(current_avg_score)
+    epsilon = max(EPSILON_END, EPSILON_DECAY * epsilon) # Decay epsilon
+
+    print(f"Episode {i_episode}\tTotal Steps: {total_steps}\tScore: {current_episode_reward:.2f}\tAvg Score (last 100): {current_avg_score:.2f}\tEpsilon: {epsilon:.4f}")
+
+    if i_episode % SAVE_EVERY == 0:
+        agent.save(MODEL_PATH)
+        print(f"Model saved at episode {i_episode} to {MODEL_PATH}")
+
+        # Plotting
+        plt.figure(figsize=(12, 6))
+        plt.plot(all_episode_scores, label='Episode Score', alpha=0.6)
+        plt.plot(all_average_scores, label='Avg Score (Window 100)', color='red', linewidth=2)
+        plt.xlabel('Episode')
+        plt.ylabel('Score')
+        plt.title(f'Training Scores up to Episode {i_episode}')
+        plt.legend()
+        plt.grid(True)
+        plot_save_path = f"{PLOT_PATH_PREFIX}_episode_{i_episode}.png"
+        plt.savefig(plot_save_path)
+        plt.close()
+        print(f"Plot saved to {plot_save_path}")
+
+# --- Cleanup ---
+env.close()
+agent.save(MODEL_PATH) # Save the final model
+print("Training finished and model saved.")
+print(f"To evaluate, you can load '{MODEL_PATH}' and set epsilon to a small value.")
