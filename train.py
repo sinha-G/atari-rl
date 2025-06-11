@@ -13,36 +13,38 @@ from agents.ppo import PPOAgent
 gym.register_envs(ale_py)
 
 # --- Hyperparameters ---
-ENV_NAME = 'ALE/Breakout-v5'
+ENV_NAME = 'ALE/Breakout-v5' # 'ALE/DonkeyKong-v5'
 RENDER_MODE = None # 'human' or None
-FRAMESKIP = 1
+FRAMESKIP = 4
 
 NUM_EPISODES = 10000  # Number of episodes to train for
 MAX_STEPS_PER_EPISODE = 10000 # Max steps before truncating an episode
 EPSILON_START = 1.0    # Starting value of epsilon
-EPSILON_END = 0.01     # Minimum value of epsilon
-EPSILON_DECAY = 0.997  # Multiplicative factor for decaying epsilon
-SAVE_EVERY = 500 # Save the model and plot every N episodes
+EPSILON_END = 0.005     # Minimum value of epsilon
+EPSILON_DECAY = 0.999  # Multiplicative factor for decaying epsilon
+SAVE_EVERY = 100 # Save the model and plot every N episodes
 
 # --- Directory Setup ---
 MODEL_DIR = "models"
 PLOT_DIR = "plots"
 os.makedirs(MODEL_DIR, exist_ok=True)
 os.makedirs(PLOT_DIR, exist_ok=True)
-MODEL_PATH = os.path.join(MODEL_DIR, "breakout_ppo.pth") # Path to save/load the model
-PLOT_PATH_PREFIX = os.path.join(PLOT_DIR, "breakout_scores_ppo")
+# Update model and plot paths to be specific to the environment
+ENV_NAME_LOWER = ENV_NAME.split('/')[-1].split('-')[0].lower() # e.g., "donkeykong"
+MODEL_PATH = os.path.join(MODEL_DIR, f"{ENV_NAME_LOWER}_ppo.pth")
+PLOT_PATH_PREFIX = os.path.join(PLOT_DIR, f"{ENV_NAME_LOWER}_scores_ppo")
 
 # --- Environment Setup ---
 env = gym_wrappers.AtariPreprocessing(
     gym.make(
         ENV_NAME, 
         render_mode=RENDER_MODE, 
-        frameskip=FRAMESKIP
+        frameskip=1
     ),
     screen_size=84,
     grayscale_obs=True,
     grayscale_newaxis=False, # Results in (H, W) for grayscale, not (H, W, 1)
-    frame_skip=4,            # Stacks and max-pools last 4 frames
+    frame_skip=FRAMESKIP,    # Stacks and max-pools last 4 frames
     scale_obs=True           # Normalizes observations to [0, 1] and converts to float32
 )
 env = gym_wrappers.FrameStackObservation(env, stack_size=4) # Apply FrameStack
@@ -58,14 +60,13 @@ print(f"Action size: {action_size}")
 #                  buffer_size=10000, batch_size=64, gamma=0.99, lr=1e-4, tau=1e-3, update_every=4)
 
 agent = PPOAgent(state_space_shape=state_shape, action_space_size=action_size,
-                 lr=2.5e-4,        # Typical PPO learning rate
+                 lr=2.5e-4,             # Typical PPO learning rate
                  gamma=0.99,
                  gae_lambda=0.95,
                  clip_epsilon=0.1,      # PPO clip value can be 0.1 or 0.2
-                 n_steps=128,           # Number of steps per rollout (per environment, if parallel)
-                                        # For single env, this is steps before update.
-                 ppo_epochs=4,          # Number of optimization epochs per rollout
-                 mini_batch_size=32*8,  # Often n_steps / num_mini_batches. e.g. 128 / 4 = 32.
+                 n_steps=512,           # Number of steps per rollout (per environment, if parallel)
+                 ppo_epochs=8,          # Number of optimization epochs per rollout
+                 mini_batch_size=64,    # Often n_steps / num_mini_batches. e.g. 128 / 4 = 32.
                                         # Or, if n_steps is total batch size from multiple envs,
                                         # mini_batch_size could be e.g. 256 if n_steps=2048
                                         # Let's try n_steps = 128, mini_batch_size = 32 (4 mini-batches per epoch)
@@ -81,7 +82,7 @@ agent = PPOAgent(state_space_shape=state_shape, action_space_size=action_size,
 #     agent.load(MODEL_PATH)
 #     print(f"Loaded model from {MODEL_PATH}")
 #     # If loading a model, you might want to adjust epsilon if you're evaluating
-#     # EPSILON_START = EPSILON_END # Start with low epsilon if evaluating
+#     EPSILON_START = EPSILON_END # Start with low epsilon if evaluating
 # except FileNotFoundError:
 #     print(f"No pre-trained model found at {MODEL_PATH}, starting from scratch.")
 
@@ -145,7 +146,7 @@ for i_episode in range(1, NUM_EPISODES + 1):
         plt.title(f'Training Scores up to Episode {i_episode}')
         plt.legend()
         plt.grid(True)
-        plot_save_path = f"{PLOT_PATH_PREFIX}_episode_{i_episode}.png"
+        plot_save_path = f"{PLOT_PATH_PREFIX}.png"
         plt.savefig(plot_save_path)
         plt.close()
         print(f"Plot saved to {plot_save_path}")
