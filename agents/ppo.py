@@ -87,7 +87,11 @@ class PPOAgent(Agent):
                  entropy_coeff=0.01, # Entropy coefficient for actor loss
                  value_loss_coeff=0.5, # Value loss coefficient
                  max_grad_norm=0.5, # Gradient clipping
-                 fc_units=512):
+                 fc_units=512,
+                 anneal_lr_on_interval: bool = False,
+                 lr_decay_factor: float = 0.9, # Factor to multiply LR by
+                 lr_decay_rollouts: int = 100, # Number of rollouts (updates) before decaying LR
+                 min_lr: float = 1e-6):       # Minimum learning rate):
         super().__init__(state_space_shape, action_space_size)
 
         self.original_state_shape = state_space_shape # (C, H, W)
@@ -102,6 +106,12 @@ class PPOAgent(Agent):
         self.entropy_coeff = entropy_coeff
         self.value_loss_coeff = value_loss_coeff
         self.max_grad_norm = max_grad_norm
+
+        self.anneal_lr_on_interval = anneal_lr_on_interval
+        self.lr_decay_factor = lr_decay_factor
+        self.lr_decay_rollouts = lr_decay_rollouts
+        self.min_lr = min_lr
+        self.rollouts_processed_for_lr_decay = 0 # Counter for LR decay
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -184,6 +194,18 @@ class PPOAgent(Agent):
         return advantages, returns
 
     def _update(self, last_next_state, last_done):
+        # Annealing
+        if self.anneal_lr_on_interval:
+            self.rollouts_processed_for_lr_decay += 1
+            if self.rollouts_processed_for_lr_decay % self.lr_decay_rollouts == 0:
+                old_lr = self.optimizer.param_groups[0]['lr']
+                new_lr = max(old_lr * self.lr_decay_factor, self.min_lr)
+                if new_lr < old_lr:
+                    self.optimizer.param_groups[0]['lr'] = new_lr
+                    print(f"LR decayed at rollout {self.rollouts_processed_for_lr_decay}: {old_lr:.2e} -> {new_lr:.2e}")
+                elif old_lr <= self.min_lr:
+                     print(f"LR already at/below minimum {self.min_lr:.2e} at rollout {self.rollouts_processed_for_lr_decay}.")
+
         advantages, returns_target = self._compute_gae_and_returns(last_next_state, last_done)
 
         # Normalize advantages

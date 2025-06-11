@@ -24,6 +24,12 @@ EPSILON_END = 0.005     # Minimum value of epsilon
 EPSILON_DECAY = 0.999  # Multiplicative factor for decaying epsilon
 SAVE_EVERY = 100 # Save the model and plot every N episodes
 
+# --- Hyperparameters for Interval LR Annealing ---
+ANNEAL_LR_ON_INTERVAL = True     # Enable LR annealing at regular intervals
+LR_DECAY_FACTOR = 0.95           # Factor to multiply LR by (e.g., 0.95 means 5% decay)
+LR_DECAY_ROLLOUTS = 200          # Decay LR every N rollouts (agent updates)
+MIN_LR = 1e-6                    # Minimum learning rate
+
 # --- Directory Setup ---
 MODEL_DIR = "models"
 PLOT_DIR = "plots"
@@ -60,22 +66,21 @@ print(f"Action size: {action_size}")
 #                  buffer_size=10000, batch_size=64, gamma=0.99, lr=1e-4, tau=1e-3, update_every=4)
 
 agent = PPOAgent(state_space_shape=state_shape, action_space_size=action_size,
-                 lr=2.5e-4,             # Typical PPO learning rate
+                 lr=2.5e-4,             # Initial PPO learning rate
                  gamma=0.99,
                  gae_lambda=0.95,
-                 clip_epsilon=0.1,      # PPO clip value can be 0.1 or 0.2
-                 n_steps=512,           # Number of steps per rollout (per environment, if parallel)
-                 ppo_epochs=8,          # Number of optimization epochs per rollout
-                 mini_batch_size=64,    # Often n_steps / num_mini_batches. e.g. 128 / 4 = 32.
-                                        # Or, if n_steps is total batch size from multiple envs,
-                                        # mini_batch_size could be e.g. 256 if n_steps=2048
-                                        # Let's try n_steps = 128, mini_batch_size = 32 (4 mini-batches per epoch)
-                                        # For Atari, n_steps is often larger like 128 or 256 per env.
-                                        # If using a single environment, n_steps=128, mini_batch_size=32 is reasonable.
+                 clip_epsilon=0.1,
+                 n_steps=512,
+                 ppo_epochs=8,
+                 mini_batch_size=64,
                  entropy_coeff=0.01,
                  value_loss_coeff=0.5,
                  max_grad_norm=0.5,
-                 fc_units=512)
+                 fc_units=512,
+                 anneal_lr_on_interval=ANNEAL_LR_ON_INTERVAL,
+                 lr_decay_factor=LR_DECAY_FACTOR,
+                 lr_decay_rollouts=LR_DECAY_ROLLOUTS,
+                 min_lr=MIN_LR)
 
 # Try to load a pre-trained model
 # try:
@@ -131,7 +136,7 @@ for i_episode in range(1, NUM_EPISODES + 1):
     all_average_scores.append(current_avg_score)
     epsilon = max(EPSILON_END, EPSILON_DECAY * epsilon) # Decay epsilon
 
-    print(f"Episode {i_episode}\tTotal Steps: {total_steps}\tScore: {current_episode_reward:.2f}\tAvg Score (last 100): {current_avg_score:.2f}\tEpsilon: {epsilon:.4f}")
+    print(f"Episode {i_episode}\tTotal Steps: {total_steps}\tRollouts: {agent.rollouts_processed_for_lr_decay}\tScore: {current_episode_reward:.2f}\tAvg Score (last 100): {current_avg_score:.2f}\tEpsilon: {epsilon:.4f}\tLR: {agent.optimizer.param_groups[0]['lr']:.2e}")
 
     if i_episode % SAVE_EVERY == 0:
         agent.save(MODEL_PATH)
