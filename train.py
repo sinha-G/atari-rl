@@ -7,6 +7,7 @@ import os
 import matplotlib.pyplot as plt
 from collections import deque
 import gymnasium.wrappers as gym_wrappers
+from tqdm import tqdm # Import tqdm
 
 from agents.ppo import PPOAgent
 
@@ -83,13 +84,13 @@ agent = PPOAgent(state_space_shape=state_shape, action_space_size=action_size,
                  min_lr=MIN_LR)
 
 # Try to load a pre-trained model
-# try:
-#     agent.load(MODEL_PATH)
-#     print(f"Loaded model from {MODEL_PATH}")
-#     # If loading a model, you might want to adjust epsilon if you're evaluating
-#     EPSILON_START = EPSILON_END # Start with low epsilon if evaluating
-# except FileNotFoundError:
-#     print(f"No pre-trained model found at {MODEL_PATH}, starting from scratch.")
+try:
+    agent.load(MODEL_PATH)
+    print(f"Loaded model from {MODEL_PATH}")
+    # If loading a model, you might want to adjust epsilon if you're evaluating
+    EPSILON_START = EPSILON_END # Start with low epsilon if evaluating
+except FileNotFoundError:
+    print(f"No pre-trained model found at {MODEL_PATH}, starting from scratch.")
 
 
 # --- Training Loop ---
@@ -102,7 +103,8 @@ all_average_scores = []
 
 print(f"Training on {agent.device}")
 
-for i_episode in range(1, NUM_EPISODES + 1):
+pbar = tqdm(range(1, NUM_EPISODES + 1), desc="Training Progress")
+for i_episode in pbar:
     observation, info = env.reset()
     # The observation from env.reset() is a LazyFrames object for Atari if not using wrappers.
     # Convert to numpy array for the agent.
@@ -141,11 +143,14 @@ for i_episode in range(1, NUM_EPISODES + 1):
     all_average_scores.append(ema_score)
     epsilon = max(EPSILON_END, EPSILON_DECAY * epsilon) # Decay epsilon
 
-    print(f"Episode {i_episode}\tTotal Steps: {total_steps}\tRollouts: {agent.rollouts_processed_for_lr_decay}\tScore: {current_episode_reward:.2f}\tEMA Score: {ema_score:.2f}\tEpsilon: {epsilon:.4f}\tLR: {agent.optimizer.param_groups[0]['lr']:.2e}")
+    tqdm_desc = (f"Episode {i_episode} | Steps: {total_steps} | Rollouts: {agent.rollouts_processed_for_lr_decay} | "
+                 f"Score: {current_episode_reward:.2f} | EMA Score: {ema_score:.2f} | "
+                 f"Epsilon: {epsilon:.4f} | LR: {agent.optimizer.param_groups[0]['lr']:.2e}")
+    pbar.set_postfix_str(tqdm_desc, refresh=True)
 
     if i_episode % SAVE_EVERY == 0:
         agent.save(MODEL_PATH)
-        print(f"Model saved at episode {i_episode} to {MODEL_PATH}")
+        pbar.write(f"Model saved at episode {i_episode} to {MODEL_PATH}")
 
         # Plotting
         plt.figure(figsize=(12, 6))
@@ -159,7 +164,7 @@ for i_episode in range(1, NUM_EPISODES + 1):
         plot_save_path = f"{PLOT_PATH_PREFIX}.png"
         plt.savefig(plot_save_path)
         plt.close()
-        print(f"Plot saved to {plot_save_path}")
+        pbar.write(f"Plot saved to {plot_save_path}")
 
 # --- Cleanup ---
 env.close()
