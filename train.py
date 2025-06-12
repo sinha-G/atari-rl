@@ -23,6 +23,7 @@ EPSILON_START = 1.0    # Starting value of epsilon
 EPSILON_END = 0.005     # Minimum value of epsilon
 EPSILON_DECAY = 0.999  # Multiplicative factor for decaying epsilon
 SAVE_EVERY = 100 # Save the model and plot every N episodes
+EMA_ALPHA = 0.05
 
 # --- Hyperparameters for Interval LR Annealing ---
 ANNEAL_LR_ON_INTERVAL = True     # Enable LR annealing at regular intervals
@@ -95,7 +96,8 @@ agent = PPOAgent(state_space_shape=state_shape, action_space_size=action_size,
 # --- Training Loop ---
 epsilon = EPSILON_START
 total_steps = 0
-scores_window = deque(maxlen=100)
+ema_score = 0.0 # Initialize EMA score
+first_episode = True # Flag to handle initialization of EMA
 all_episode_scores = []
 all_average_scores = []
 
@@ -130,13 +132,17 @@ for i_episode in range(1, NUM_EPISODES + 1):
         if terminated or truncated:
             break
 
-    scores_window.append(current_episode_reward)
+    if first_episode:
+        ema_score = current_episode_reward # Initialize EMA with the first score
+        first_episode = False
+    else:
+        ema_score = EMA_ALPHA * current_episode_reward + (1 - EMA_ALPHA) * ema_score
+
     all_episode_scores.append(current_episode_reward)
-    current_avg_score = np.mean(scores_window)
-    all_average_scores.append(current_avg_score)
+    all_average_scores.append(ema_score)
     epsilon = max(EPSILON_END, EPSILON_DECAY * epsilon) # Decay epsilon
 
-    print(f"Episode {i_episode}\tTotal Steps: {total_steps}\tRollouts: {agent.rollouts_processed_for_lr_decay}\tScore: {current_episode_reward:.2f}\tAvg Score (last 100): {current_avg_score:.2f}\tEpsilon: {epsilon:.4f}\tLR: {agent.optimizer.param_groups[0]['lr']:.2e}")
+    print(f"Episode {i_episode}\tTotal Steps: {total_steps}\tRollouts: {agent.rollouts_processed_for_lr_decay}\tScore: {current_episode_reward:.2f}\tAvg Score (last 100): {current_avg_score:.2f}\tEpsilon: {epsilon:.4f} \tLR: {agent.optimizer.param_groups[0]['lr']:.2e}")
 
     if i_episode % SAVE_EVERY == 0:
         agent.save(MODEL_PATH)
@@ -145,7 +151,7 @@ for i_episode in range(1, NUM_EPISODES + 1):
         # Plotting
         plt.figure(figsize=(12, 6))
         plt.plot(all_episode_scores, label='Episode Score', alpha=0.6)
-        plt.plot(all_average_scores, label='Avg Score (Window 100)', color='red', linewidth=2)
+        plt.plot(all_average_scores, label=f'EMA Score (alpha={EMA_ALPHA})', color='red', linewidth=2)
         plt.xlabel('Episode')
         plt.ylabel('Score')
         plt.title(f'Training Scores up to Episode {i_episode}')
