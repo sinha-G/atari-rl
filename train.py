@@ -36,7 +36,6 @@ MODEL_DIR = "models"
 PLOT_DIR = "plots"
 os.makedirs(MODEL_DIR, exist_ok=True)
 os.makedirs(PLOT_DIR, exist_ok=True)
-# Update model and plot paths to be specific to the environment
 ENV_NAME_LOWER = ENV_NAME.split('/')[-1].split('-')[0].lower() # e.g., "donkeykong"
 MODEL_PATH = os.path.join(MODEL_DIR, f"{ENV_NAME_LOWER}_ppo.pth")
 PLOT_PATH_PREFIX = os.path.join(PLOT_DIR, f"{ENV_NAME_LOWER}_scores_ppo")
@@ -56,13 +55,13 @@ env = gym_wrappers.AtariPreprocessing(
 )
 env = gym_wrappers.FrameStackObservation(env, stack_size=4) # Apply FrameStack
 
+# --- Agent Setup ---
+
 state_shape = env.observation_space.shape
 action_size = env.action_space.n
-
 print(f"State shape: {state_shape}")
 print(f"Action size: {action_size}")
 
-# --- Agent Setup ---
 # agent = DQNAgent(state_space_shape=state_shape, action_space_size=action_size,
 #                  buffer_size=10000, batch_size=64, gamma=0.99, lr=1e-4, tau=1e-3, update_every=4)
 
@@ -142,7 +141,7 @@ for i_episode in range(1, NUM_EPISODES + 1):
     all_average_scores.append(ema_score)
     epsilon = max(EPSILON_END, EPSILON_DECAY * epsilon) # Decay epsilon
 
-    print(f"Episode {i_episode}\tTotal Steps: {total_steps}\tRollouts: {agent.rollouts_processed_for_lr_decay}\tScore: {current_episode_reward:.2f}\tAvg Score (last 100): {current_avg_score:.2f}\tEpsilon: {epsilon:.4f} \tLR: {agent.optimizer.param_groups[0]['lr']:.2e}")
+    print(f"Episode {i_episode}\tTotal Steps: {total_steps}\tRollouts: {agent.rollouts_processed_for_lr_decay}\tScore: {current_episode_reward:.2f}\tEMA Score: {ema_score:.2f}\tEpsilon: {epsilon:.4f}\tLR: {agent.optimizer.param_groups[0]['lr']:.2e}")
 
     if i_episode % SAVE_EVERY == 0:
         agent.save(MODEL_PATH)
